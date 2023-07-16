@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spark-thrift-server
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      foo: bar
+  template:
+    metadata:
+      labels:
+        foo: bar
+    spec:
+      containers:
+        - name: spark-thrift-server
+          image: gcr.io/spark-operator/spark:v3.0.0
+          args:
+            - /opt/spark/bin/spark-submit
+            - '--master'
+            - k8s://https://ip-your-k8s:6443
+            - '--class'
+            - org.apache.spark.sql.hive.thriftserver.HiveThriftServer2
+            - '--deploy-mode'
+            - client
+            - '--name'
+            - spark-sql
+            - '--hiveconf'
+            - hive.server2.thrift.port 10000
+            - '--conf'
+            - spark.executor.instances=1
+            - '--conf'
+            - spark.executor.memory=1G
+            - '--conf'
+            - >-
+              spark.hadoop.hive.metastore.uris=thrift://hivemetastore.hivemetastore.svc:9083
+            - '--conf'
+            - spark.sql.catalogImplementation=hive
+            - '--conf'
+            - spark.driver.memory=1G
+            - '--conf'
+            - spark.executor.cores=1
+            - '--conf'
+            - spark.kubernetes.namespace=hivemetastore
+            - '--conf'
+            - >-
+              spark.kubernetes.container.image=gcr.io/spark-operator/spark:v3.0.0
+            - '--conf'
+            - spark.kubernetes.authenticate.driver.serviceAccountName=default
+            - '--conf'
+            - spark.kubernetes.driver.pod.name=$(THRIFT_POD_NAME)
+            - '--conf'
+            - spark.driver.bindAddress=$(THRIFT_POD_IP)
+            - '--conf'
+            - spark.driver.host=spark-thrift-service
+          ports:
+            - name: spark-ui
+              containerPort: 4040
+              protocol: TCP
+            - name: spark-thrift
+              containerPort: 10000
+              protocol: TCP
+          env:
+            - name: THRIFT_POD_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.name
+            - name: THRIFT_POD_IP
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: status.podIP
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          imagePullPolicy: IfNotPresent
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      dnsPolicy: ClusterFirst
+      securityContext: {}
+      schedulerName: default-scheduler
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 25%
+      maxSurge: 25%
+  revisionHistoryLimit: 10
+  progressDeadlineSeconds: 600
